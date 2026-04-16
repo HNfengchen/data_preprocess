@@ -238,7 +238,16 @@ def process_folder(
 
 def main():
     args = parse_args()
-    cfg = load_config(args.config)
+
+    # Resolve config path: CWD → script dir → default config
+    config_path = args.config
+    if not os.path.isfile(config_path):
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+        fallback = os.path.join(script_dir, args.config)
+        if os.path.isfile(fallback):
+            config_path = fallback
+
+    cfg = load_config(config_path if os.path.isfile(config_path) else None)
 
     # CLI overrides
     if args.no_dedup:
@@ -254,6 +263,17 @@ def main():
 
     output_base = args.output or cfg["file"]["output_dir"]
     logger = setup_logger("main", config=cfg["logging"])
+
+    # 启动日志：显示配置文件路径和关键阈值，方便排查 config 不生效问题
+    resolved = config_path if os.path.isfile(config_path) else "未找到，使用默认配置"
+    logger.info(f"配置文件: {resolved}")
+    anom_cfg = cfg["modules"]["anomaly_detection"]
+    logger.info(
+        f"关键阈值 — low_saturation_threshold={anom_cfg['low_saturation_threshold']}, "
+        f"low_entropy_threshold={anom_cfg['low_entropy_threshold']}, "
+        f"overexposed={anom_cfg['overexposed_threshold']}, "
+        f"underexposed={anom_cfg['underexposed_threshold']}"
+    )
 
     if args.dry_run:
         logger.info("=== DRY RUN MODE - files will not be saved ===")
