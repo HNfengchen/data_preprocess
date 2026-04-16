@@ -11,6 +11,7 @@ DEFAULT_CONFIG = {
             "ssim_threshold": 0.95,
             "ssim_win_size": 7,
             "use_phash_prefilter": True,
+            "ssim_workers": 4,
         },
         "deblur": {
             "enabled": True,

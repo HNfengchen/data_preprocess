@@ -7,6 +7,7 @@ modules:
     ssim_threshold: 0.95
     ssim_win_size: 7
     use_phash_prefilter: true
+    ssim_workers: 4          # 内层 SSIM 并行线程数（建议 2-8）
 
   deblur:
     enabled: true
@@ -20,7 +21,7 @@ modules:
     all_black_threshold: 5
     all_white_threshold: 250
     low_entropy_threshold: 2
-    low_saturation_threshold: 10
+    low_saturation_threshold: -1
     uniform_std_threshold: 5
 
 # Concurrency config
