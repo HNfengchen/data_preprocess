@@ -36,6 +36,12 @@ class TestLoadConfig:
         with pytest.raises(ValueError, match="num_workers"):
             load_config(str(p))
 
+    def test_raises_on_invalid_batch_size(self, tmp_path):
+        p = tmp_path / "cfg.yaml"
+        write_yaml({"concurrency": {"batch_size": 0}}, str(p))
+        with pytest.raises(ValueError, match="batch_size"):
+            load_config(str(p))
+
     def test_load_none_returns_default(self):
         cfg = load_config(None)
         assert cfg["concurrency"]["batch_size"] == 100
