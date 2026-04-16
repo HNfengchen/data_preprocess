@@ -12,7 +12,7 @@ import os
 import shutil
 import time
 import multiprocessing
-from concurrent.futures import ProcessPoolExecutor, as_completed
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import List, Dict, Any
 
 from utils.config_loader import load_config
@@ -142,35 +142,44 @@ def process_folder(
 
     logger.info(f"[{folder_name}] found {len(image_paths)} images")
 
-    # Stage 1: Deduplication (batch)
+    # Stage 1: Deduplication (batch, 在主线程串行，因需全局比对)
+    t_dedup = time.time()
+    logger.info(f"[{folder_name}] 开始去重阶段...")
     dedup_mod = DeduplicationModule(dedup_cfg)
-    dedup_results = dedup_mod.process_batch(image_paths)
+    dedup_results = dedup_mod.process_batch(image_paths, logger=logger)
     dedup_map = {r["file_path"]: r for r in dedup_results}
+    logger.info(f"[{folder_name}] 去重完成，耗时 {time.time()-t_dedup:.1f}s")
 
-    # Stage 2: Deblur + Anomaly (parallel)
+    # Stage 2: Deblur + Anomaly（多线程，ThreadPoolExecutor 避免 Windows spawn 开销）
     num_workers = conc_cfg.get("num_workers") or multiprocessing.cpu_count()
     batch_size = conc_cfg.get("batch_size", 100)
     memory_monitor = MemoryMonitor(conc_cfg.get("memory_limit_mb", 2048))
     all_records: List[Dict[str, Any]] = []
+    use_threads = conc_cfg.get("enabled", True) and num_workers > 1
+
+    logger.info(f"[{folder_name}] 开始去模糊+异常检测，workers={num_workers if use_threads else 1}（{'多线程' if use_threads else '单线程'}）")
+    t_proc = time.time()
 
     with ProgressTracker(len(image_paths), f"Processing {folder_name}", prog_cfg.get("enabled", True)) as prog:
-        for batch_start in range(0, len(image_paths), batch_size):
-            batch = image_paths[batch_start: batch_start + batch_size]
+        # 线程池在循环外创建，避免每批重建的开销
+        executor_ctx = ThreadPoolExecutor(max_workers=num_workers) if use_threads else None
+        try:
+            for batch_idx, batch_start in enumerate(range(0, len(image_paths), batch_size)):
+                batch = image_paths[batch_start: batch_start + batch_size]
+                logger.debug(f"[{folder_name}] batch {batch_idx+1}，{len(batch)} 张")
 
-            if conc_cfg.get("enabled", True) and num_workers > 1:
-                with ProcessPoolExecutor(max_workers=num_workers) as executor:
+                if use_threads and executor_ctx:
                     futures = {
-                        executor.submit(_process_single_image, p, deblur_cfg, anomaly_cfg): p
+                        executor_ctx.submit(_process_single_image, p, deblur_cfg, anomaly_cfg): p
                         for p in batch
                     }
                     for future in as_completed(futures):
+                        p = futures[future]
                         try:
                             rec = future.result()
                         except Exception as e:
-                            p = futures[future]
-                            logger.error(f"Processing failed: {p}, error: {e}")
+                            logger.error(f"处理失败: {os.path.basename(p)}, 错误: {e}")
                             rec = _build_base_record(p)
-                        # Merge dedup results
                         dedup_rec = dedup_map.get(rec["file_path"], {})
                         rec.update({
                             "phash": dedup_rec.get("phash", ""),
@@ -180,26 +189,31 @@ def process_folder(
                             "duplicate_of": dedup_rec.get("duplicate_of", ""),
                         })
                         all_records.append(rec)
-                        prog.update()
-            else:
-                for p in batch:
-                    try:
-                        rec = _process_single_image(p, deblur_cfg, anomaly_cfg)
-                    except Exception as e:
-                        logger.error(f"Processing failed: {p}, error: {e}")
-                        rec = _build_base_record(p)
-                    dedup_rec = dedup_map.get(p, {})
-                    rec.update({
-                        "phash": dedup_rec.get("phash", ""),
-                        "phash_hamming_distance": dedup_rec.get("phash_hamming_distance", -1),
-                        "ssim_score": dedup_rec.get("ssim_score", -1.0),
-                        "is_duplicate": dedup_rec.get("is_duplicate", "否"),
-                        "duplicate_of": dedup_rec.get("duplicate_of", ""),
-                    })
-                    all_records.append(rec)
-                    prog.update()
+                        prog.update(msg=os.path.basename(p))
+                else:
+                    for p in batch:
+                        try:
+                            rec = _process_single_image(p, deblur_cfg, anomaly_cfg)
+                        except Exception as e:
+                            logger.error(f"处理失败: {os.path.basename(p)}, 错误: {e}")
+                            rec = _build_base_record(p)
+                        dedup_rec = dedup_map.get(p, {})
+                        rec.update({
+                            "phash": dedup_rec.get("phash", ""),
+                            "phash_hamming_distance": dedup_rec.get("phash_hamming_distance", -1),
+                            "ssim_score": dedup_rec.get("ssim_score", -1.0),
+                            "is_duplicate": dedup_rec.get("is_duplicate", "否"),
+                            "duplicate_of": dedup_rec.get("duplicate_of", ""),
+                        })
+                        all_records.append(rec)
+                        prog.update(msg=os.path.basename(p))
 
-            memory_monitor.check_and_collect()
+                memory_monitor.check_and_collect()
+        finally:
+            if executor_ctx:
+                executor_ctx.shutdown(wait=False)
+
+    logger.info(f"[{folder_name}] 去模糊+异常检测完成，耗时 {time.time()-t_proc:.1f}s")
 
     # Stage 3: Determine final keep/reject
     for rec in all_records:

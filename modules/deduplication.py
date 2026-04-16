@@ -49,8 +49,11 @@ class DeduplicationModule(BaseModule):
         record.setdefault("duplicate_of", "")
         return record
 
-    def process_batch(self, image_paths: List[str]) -> List[Dict[str, Any]]:
+    def process_batch(self, image_paths: List[str], logger=None) -> List[Dict[str, Any]]:
         """Process batch of images for deduplication."""
+        import logging
+        log = logger or logging.getLogger(__name__)
+
         records: List[Dict[str, Any]] = []
         for p in image_paths:
             records.append({
@@ -65,24 +68,32 @@ class DeduplicationModule(BaseModule):
         if not self.enabled:
             return records
 
+        n = len(records)
         hash_size: int = self.config.get("phash_hash_size", 16)
         phash_thr: int = self.config.get("phash_threshold", 10)
         ssim_thr: float = self.config.get("ssim_threshold", 0.95)
         win_size: int = self.config.get("ssim_win_size", 7)
         use_prefilter: bool = self.config.get("use_phash_prefilter", True)
 
-        # Stage 1: Compute all pHash values
-        for rec in records:
+        # Stage 1: Compute all pHash values (with progress log every 10%)
+        log.info(f"[dedup] 计算 pHash：共 {n} 张")
+        milestone = max(1, n // 10)
+        for idx, rec in enumerate(records):
             try:
                 rec["phash"] = _compute_phash(rec["file_path"], hash_size)
             except Exception:
                 rec["phash"] = ""
+            if (idx + 1) % milestone == 0 or (idx + 1) == n:
+                log.info(f"[dedup] pHash 进度：{idx + 1}/{n}")
 
-        # Track kept images
+        # Stage 2: Pairwise comparison
+        log.info(f"[dedup] 开始相似度比对...")
         kept: List[Dict] = []
+        ssim_calls = 0
 
         for i, rec in enumerate(records):
             if rec["phash"] == "":
+                kept.append(rec)
                 continue
 
             duplicate_found = False
@@ -98,6 +109,7 @@ class DeduplicationModule(BaseModule):
                     rec["phash_hamming_distance"] = hd
 
                 # SSIM verification
+                ssim_calls += 1
                 score = _compute_ssim(rec["file_path"], kept_rec["file_path"], win_size)
                 rec["ssim_score"] = round(score, 4)
                 if score >= ssim_thr:
@@ -109,4 +121,9 @@ class DeduplicationModule(BaseModule):
             if not duplicate_found:
                 kept.append(rec)
 
+            if (i + 1) % milestone == 0 or (i + 1) == n:
+                dupes = sum(1 for r in records[:i+1] if r["is_duplicate"] == "是")
+                log.info(f"[dedup] 比对进度：{i + 1}/{n}，重复 {dupes} 张，SSIM调用 {ssim_calls} 次")
+
+        log.info(f"[dedup] 完成，保留 {len(kept)} 张，重复 {n - len(kept)} 张，共SSIM调用 {ssim_calls} 次")
         return records
