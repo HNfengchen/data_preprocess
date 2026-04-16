@@ -50,10 +50,11 @@ class AnomalyDetectionModule(BaseModule):
         record["saturation_mean"] = round(s_mean, 2)
 
         # Determine anomaly type (priority order)
+        std_thr = cfg.get("uniform_std_threshold", 5)
         anomaly = "正常"
-        if b_mean < cfg["all_black_threshold"] and b_std < 5:
+        if b_mean < cfg["all_black_threshold"] and b_std < std_thr:
             anomaly = "全黑"
-        elif b_mean > cfg["all_white_threshold"] and b_std < 5:
+        elif b_mean > cfg["all_white_threshold"] and b_std < std_thr:
             anomaly = "全白"
         elif b_mean > cfg["overexposed_threshold"]:
             anomaly = "过曝"

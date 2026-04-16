@@ -1,3 +1,4 @@
+import os
 import cv2
 import numpy as np
 import imagehash
@@ -50,7 +51,6 @@ class DeduplicationModule(BaseModule):
 
     def process_batch(self, image_paths: List[str]) -> List[Dict[str, Any]]:
         """Process batch of images for deduplication."""
-        import os
         records: List[Dict[str, Any]] = []
         for p in image_paths:
             records.append({

@@ -25,6 +25,7 @@ DEFAULT_CONFIG = {
             "all_white_threshold": 250,
             "low_entropy_threshold": 2,
             "low_saturation_threshold": 10,
+            "uniform_std_threshold": 5,
         },
     },
     "concurrency": {
