@@ -1,0 +1,51 @@
+# Module enable/disable
+modules:
+  deduplication:
+    enabled: true
+    phash_hash_size: 16
+    phash_threshold: 10
+    ssim_threshold: 0.95
+    ssim_win_size: 7
+    use_phash_prefilter: true
+
+  deblur:
+    enabled: true
+    bren_threshold: 50
+    resize_for_analysis: [512, 512]
+
+  anomaly_detection:
+    enabled: true
+    overexposed_threshold: 240
+    underexposed_threshold: 15
+    all_black_threshold: 5
+    all_white_threshold: 250
+    low_entropy_threshold: 2
+    low_saturation_threshold: 10
+    uniform_std_threshold: 5
+
+# Concurrency config
+concurrency:
+  enabled: true
+  num_workers: 0        # 0 = auto-detect CPU cores
+  batch_size: 100
+  memory_limit_mb: 2048
+
+# Progress display
+progress:
+  enabled: true
+  update_interval: 10
+
+# File handling
+file:
+  image_extensions: [".jpg", ".jpeg", ".png", ".bmp", ".tiff", ".tif", ".webp"]
+  recursive: false
+  output_dir: "output"
+  csv_encoding: "utf-8-sig"
+
+# Logging
+logging:
+  level: INFO
+  max_bytes: 10485760   # 10MB
+  backup_count: 3
+  format: "[%(asctime)s][%(levelname)s][%(name)s] %(message)s"
+  date_format: "%Y-%m-%d %H:%M:%S"
