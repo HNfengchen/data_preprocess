@@ -50,3 +50,4 @@ logging:
   backup_count: 3
   format: "[%(asctime)s][%(levelname)s][%(name)s] %(message)s"
   date_format: "%Y-%m-%d %H:%M:%S"
+  console_enabled: true  # 是否启用控制台输出（隐藏看板输出）

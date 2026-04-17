@@ -18,6 +18,8 @@ def setup_logger(name: str, log_dir: str = "logs", config: dict | None = None) -
     fmt = config.get("format", "[%(asctime)s][%(levelname)s][%(name)s] %(message)s")
     datefmt = config.get("date_format", "%Y-%m-%d %H:%M:%S")
 
+    console_enabled = config.get("console_enabled", True)
+
     logger = logging.getLogger(name)
     if logger.handlers:
         return logger  # Already initialized
@@ -25,11 +27,12 @@ def setup_logger(name: str, log_dir: str = "logs", config: dict | None = None) -
     logger.setLevel(logging.DEBUG)
     formatter = logging.Formatter(fmt, datefmt=datefmt)
 
-    # Console handler
-    ch = logging.StreamHandler()
-    ch.setLevel(level)
-    ch.setFormatter(formatter)
-    logger.addHandler(ch)
+    # Console handler (conditional)
+    if console_enabled:
+        ch = logging.StreamHandler()
+        ch.setLevel(level)
+        ch.setFormatter(formatter)
+        logger.addHandler(ch)
 
     # Rotating file handler
     os.makedirs(log_dir, exist_ok=True)
